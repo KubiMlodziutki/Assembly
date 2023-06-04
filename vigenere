@@ -1,0 +1,234 @@
+.data
+key: .asciiz "LIST"
+plaintext: .asciiz "LOKOMOTYWA"
+ciphertext: .space 50
+decrypted: .space 50
+newline: .asciiz "\n"
+prompt: .asciiz "Enter E for encryption or D for decryption: "
+input: .space 2
+ciphertext_prompt: .asciiz "Enter ciphertext: "
+
+.text
+main:
+    # Prompt user for operation
+    la $a0, prompt
+    li $v0, 4
+    syscall
+
+    # Read user input
+    la $a0, input
+    li $a1, 2
+    li $v0, 8
+    syscall
+
+    # Null-terminate input buffer
+    la $t1, input
+    addi $t1, $t1, 1
+    sb $zero, 0($t1)
+
+    # Check if user wants to encrypt or decrypt
+    lb $t0, input
+    beq $t0, 'E', main_encrypt
+    beq $t0, 'D', main_decrypt
+
+main_encrypt:
+    # Encryption
+    la $a0, plaintext
+    la $a1, key
+    la $a2, ciphertext
+    jal vigenere_encrypt
+    
+    la $a0, newline
+    li $v0, 4
+    syscall
+    
+    # Print ciphertext
+    la $a0, ciphertext
+    li $v0, 4
+    syscall
+    j main_exit
+
+main_decrypt:
+    la $a0, newline
+    li $v0, 4
+    syscall
+    
+    # Prompt user for ciphertext
+    la $a0, ciphertext_prompt
+    li $v0, 4
+    syscall
+
+    # Read ciphertext from user
+    la $a0, ciphertext
+    li $a1, 50
+    li $v0, 8
+    syscall
+
+    # Null-terminate ciphertext buffer
+    move $t1, $a0
+    add $t1, $t1, $a1
+    sb $zero, -1($t1)
+
+    # Decryption
+    la $a0, ciphertext
+    la $a1, key
+    la $a2, decrypted
+    jal vigenere_decrypt
+    
+    la $a0, newline
+    li $v0, 4
+    syscall
+    
+     # Find end of my_string
+    la $t0, decrypted
+    move $t1, $t0
+find_end:
+    lb $t2, 0($t1)
+    beqz $t2, end_found
+    addi $t1, $t1, 1
+    j find_end
+end_found:
+    
+    # Add null character before last character
+    subi $t1, $t1, 1
+    lb $t2, 0($t1)
+    sb $zero, 0($t1)
+    
+    # Print my_string without last character
+    la $a0, decrypted
+    li $v0, 4
+    syscall
+    
+    # Restore original value of last character
+    sb $t2, 0($t1)
+
+main_exit:
+    # Exit program
+    li $v0, 10
+    syscall
+
+vigenere_encrypt:
+    # Arguments:
+    #   $a0 - pointer to plaintext string
+    #   $a1 - pointer to key string
+    #   $a2 - pointer to ciphertext buffer
+
+    # Save registers on stack
+    addi $sp, $sp, -20
+    sw $ra, 16($sp)
+    sw $s0, 12($sp)
+    sw $s1, 8($sp)
+    sw $s2, 4($sp)
+    sw $s3, 0($sp)
+
+    # Initialize variables
+    move $s0, $a0     # s0 = plaintext pointer
+    move $s1, $a1     # s1 = key pointer
+    move $s2, $a2     # s2 = ciphertext pointer
+    li $s3, 0         # s3 = key index
+
+encrypt_loop:
+    lbu $t0, 0($s0)   # t0 = current plaintext character
+    beqz $t0, encrypt_done
+
+    lbu $t1, 0($s1)   # t1 = current key character
+
+    subu $t0, $t0, 'A'
+    subu $t1, $t1, 'A'
+    addu $t0, $t0, $t1
+    remu $t0, $t0, 26
+    addu $t0, $t0, 'A'
+
+    sb $t0, 0($s2)   # store encrypted character in ciphertext
+
+    addi $s3, $s3, 1  # increment key index
+    addi $s1, $s1, 1  # increment key pointer
+
+encrypt_next_key_char:
+    lbu $t1, 0($s1)   # check if end of key reached
+    bnez $t1, encrypt_continue
+
+encrypt_reset_key:
+    move $s1,$a1      # reset key pointer to start of key string
+
+encrypt_continue:
+    addi $s0,$s0 ,1   # increment plaintext pointer
+    addi $s2,$s2 ,1   # increment ciphertext pointer
+    j encrypt_loop
+
+encrypt_done:
+    sb $zero, 0($s2)  # null-terminate ciphertext string
+
+    # Restore registers from stack
+    lw $ra, 16($sp)
+    lw $s0, 12($sp)
+    lw $s1, 8($sp)
+    lw $s2, 4($sp)
+    lw $s3, 0($sp)
+    addi $sp, $sp, 20
+
+    jr $ra
+
+vigenere_decrypt:
+    # Arguments:
+    #   $a0 - pointer to ciphertext string
+    #   $a1 - pointer to key string
+    #   $a2 - pointer to plaintext buffer
+
+    # Save registers on stack
+    addi $sp, $sp, -20
+    sw $ra, 16($sp)
+    sw $s0, 12($sp)
+    sw $s1, 8($sp)
+    sw $s2, 4($sp)
+    sw $s3, 0($sp)
+
+    # Initialize variables
+    move $s0, $a0     # s0 = ciphertext pointer
+    move $s1, $a1     # s1 = key pointer
+    move $s2, $a2     # s2 = plaintext pointer
+    li $s3, 0         # s3 = key index
+
+decrypt_loop:
+    lbu $t0, 0($s0)   # t0 = current ciphertext character
+    beqz $t0, decrypt_done
+
+    lbu $t1, 0($s1)   # t1 = current key character
+
+    subu $t0, $t0, 'A'
+    subu $t1, $t1, 'A'
+    subu $t0, $t0, $t1
+    addiu $t0, $t0, 26
+    remu $t0, $t0, 26
+    addu $t0, $t0, 'A'
+
+    sb $t0, 0($s2)   # store decrypted character in plaintext
+
+    addi $s3, $s3, 1  # increment key index
+    addi $s1, $s1, 1  # increment key pointer
+
+decrypt_next_key_char:
+    lbu $t1, 0($s1)   # check if end of key reached
+    bnez $t1, decrypt_continue
+
+decrypt_reset_key:
+    move $s1,$a1      # reset key pointer to start of key string
+
+decrypt_continue:
+    addi $s0,$s0 ,1   # increment ciphertext pointer
+    addi $s2,$s2 ,1   # increment plaintext pointer
+    j decrypt_loop
+
+decrypt_done:
+    sb $zero, 0($s2)  # null-terminate plaintext string
+
+    # Restore registers from stack
+    lw $ra, 16($sp)
+    lw $s0, 12($sp)
+    lw $s1, 8($sp)
+    lw $s2, 4($sp)
+    lw $s3, 0($sp)
+    addi $sp, $sp, 20
+
+    jr $ra
+
